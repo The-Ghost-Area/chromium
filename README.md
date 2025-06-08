@@ -5,3 +5,7 @@ This repository (`https://github.com/The-Ghost-Area/chromium.git`) provides scri
 ## Installation
 
 1. **Clone the Repository**:
+
+2. **Install Requirements**:
+
+- Ensure you have `curl`, `git`, and Docker prerequisites installed:
