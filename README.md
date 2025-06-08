@@ -1,6 +1,10 @@
-1- git clone https://github.com/The-Ghost-Area/chromium.git
-
-2- cd chromium
+1. **Clone The Repositories:**
+   ```bash
+   git clone https://github.com/The-Ghost-Area/chromium.git
+   ```
+   ```bash
+   cd chromium
+   ```
 
 3- chmod +x setup_chromium.sh
 
