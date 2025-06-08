@@ -2,6 +2,13 @@
 
 This guide will help you quickly set up and manage Chromium inside a Docker container.
 
+Step 0: Update Package List and Install Git
+-------------------------------------------
+Before cloning the repository, make sure Git is installed on your system. Run:
+
+    sudo apt update
+    sudo apt install git
+
 Step 1: Clone the Chromium Docker Repository
 --------------------------------------------
 Open your terminal and run:
@@ -40,8 +47,9 @@ Troubleshooting
 
 Summary
 -------
-1. Clone the repository and enter the directory.
-2. Make the setup script executable and run it with sudo.
-3. Use Docker commands to start, stop, or restart the Chromium container.
+1. Update package list and install Git.
+2. Clone the repository and enter the directory.
+3. Make the setup script executable and run it with sudo.
+4. Use Docker commands to start, stop, or restart the Chromium container.
 
 For further assistance, feel free to ask.
