@@ -20,7 +20,6 @@ Set up Chromium in a Docker container quickly and easily.
 git clone https://github.com/The-Ghost-Area/chromium.git && cd chromium
 
 ### 1️⃣ Make the Setup Script Executable and Run It
-```bash
 chmod +x setup_chromium.sh && sudo ./setup_chromium.sh
 
 ### 3️⃣ (Optional) Check Your Public IP
