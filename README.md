@@ -1,10 +1,10 @@
-git clone https://github.com/The-Ghost-Area/chromium.git
+1- git clone https://github.com/The-Ghost-Area/chromium.git
 
-cd chromium
+2- cd chromium
 
-chmod +x setup_chromium.sh
+3- chmod +x setup_chromium.sh
 
-sudo ./setup_chromium.sh
+4- sudo ./setup_chromium.sh
 
 
 for ip  curl ipv4.icanhazip.com
