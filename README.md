@@ -1,22 +1,20 @@
-1. **Clone The Repositories:**
-   ```bash
-   git clone https://github.com/The-Ghost-Area/chromium.git
-   ```
-   ```bash
-   cd chromium
-   ```
+# 🚀 Chromium Docker Setup Guide
 
-3- chmod +x setup_chromium.sh
+Set up Chromium in a Docker container quickly and easily.
 
-4- sudo ./setup_chromium.sh
+---
 
+## ⚙️ Prerequisites
 
-**for ip**  curl ipv4.icanhazip.com
+- Docker installed → [Install Docker](https://docs.docker.com/get-docker/)  
+- Git installed → [Install Git](https://git-scm.com/downloads)  
+- Linux Terminal access  
 
-**Stop the chromium-**  docker stop chromium
+---
 
-**Start the chromium again-** docker start chromium
+## 🛠️ Installation
 
-**Restart the chromium-** docker restart chromium
+### 1️⃣ Clone The Repository and Enter Directory
 
-
+```bash
+git clone https://github.com/The-Ghost-Area/chromium.git && cd chromium
