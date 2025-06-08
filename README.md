@@ -1,11 +1,20 @@
-# Chromium Docker Setup
+Setup Instructions
+1. Clone the repository:
+git clone <repository-url>
+cd chromium-docker-repo
 
-This repository (`https://github.com/The-Ghost-Area/chromium.git`) provides scripts to set up and remove a Chromium browser container using Docker on Ubuntu. The setup script installs Docker, configures a Chromium container, prompts for a username and password, auto-detects the server's timezone, uses default ports (3010 for HTTP, 3011 for HTTPS), and opens `https://google.com` by default. The cleanup script removes the container, directories, and Docker entirely.
+2. Make the setup script executable:
+chmod +x setup_chromium.sh
 
-## Installation
+3. Run the setup script:
+sudo ./setup_chromium.sh
 
-1. **Clone the Repository**:
+4. Follow prompts:
+Enter a CUSTOM_USER (username for Chromium login).
+Enter a PASSWORD (hidden for security).
 
-2. **Install Requirements**:
+5. Access Chromium:
+The script outputs URLs like http://<public-ip>:3010/ and https://<public-ip>:3011/.
+Login with your chosen username and password.
+If the IP shows as your-vps-ip, replace it with your server's public IP (curl ifconfig.me).
 
-- Ensure you have `curl`, `git`, and Docker prerequisites installed:
