@@ -18,3 +18,7 @@ Set up Chromium in a Docker container quickly and easily.
 
 ```bash
 git clone https://github.com/The-Ghost-Area/chromium.git && cd chromium
+
+chmod +x setup_chromium.sh && sudo ./setup_chromium.sh
+
+curl ipv4.icanhazip.com
