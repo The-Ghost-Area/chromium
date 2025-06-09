@@ -2,7 +2,7 @@
 
 This guide will help you quickly set up and manage Chromium inside a Docker container.
 
-Step 0: Update Package List and Install Git
+Step : Update Package List and Install Git
 -------------------------------------------
 Before cloning the repository, make sure Git is installed on your system. Run:
 
