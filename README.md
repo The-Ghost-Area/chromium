@@ -49,6 +49,7 @@ VPC Network > Firewall rules
 
  Fill in the form:
 Name: allow-chromium
+
 Network: default (or the network your VM is using) 
 
 Targets: All instances in the network (or use “Specified target tags” if you're using instance tags) 
