@@ -39,6 +39,30 @@ Use the following commands to control the container:
     docker stop chromium       # Stop the container
     docker restart chromium    # Restart the container
 
+Create Firewall Rule for Chromium
+---------------
+1. Go to Google Cloud Console
+https://console.cloud.google.com
+2. Navigate to:
+VPC Network > Firewall rules
+3. Click on “Create Firewall Rule”
+
+ Fill in the form:
+Name: allow-chromium
+Network: default (or the network your VM is using) 
+
+Targets: All instances in the network (or use “Specified target tags” if you're using instance tags) 
+
+Source IP Ranges: 0.0.0.0/0 
+(Allows access from anywhere — you can restrict this to your IP if needed for security) 
+
+Protocols and Ports:
+Select Specified protocols and ports 
+
+Then check TCP and enter:
+3010,3011
+ Click “Create”
+
 Troubleshooting
 ---------------
 - Ensure Docker is installed and running.
