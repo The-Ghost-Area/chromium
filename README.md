@@ -35,9 +35,9 @@ Step 3: Manage the Chromium Docker Container
 --------------------------------------------
 Use the following commands to control the container:
 
-    docker start chromium      # Start the container
-    docker stop chromium       # Stop the container
-    docker restart chromium    # Restart the container
+    sudo docker start chromium      # Start the container
+    sudo docker stop chromium       # Stop the container
+    sudo docker restart chromium    # Restart the container
 
 Create Firewall Rule for Chromium
 ---------------
