@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Enhanced Chromium Docker Setup Script
-# Version: 2.0 - Fixed all syntax errors
-# Description: User-friendly script to install and setup Chromium container
+# Version: 3.0 - All errors fixed and improved
+# Description: Production-ready script to install and setup Chromium container
 
 # Colors for better UI
 RED='\033[0;31m'
@@ -17,13 +17,26 @@ NC='\033[0m'
 # Exit on any error
 set -e
 
+# Global variables
+DOCKER_COMPOSE_CMD=""
+REPO_URL=""
+CODENAME=""
+PUBLIC_IP=""
+CHROMIUM_DIR=""
+CONFIG_DIR=""
+CUSTOM_USER=""
+PASSWORD=""
+HTTP_PORT=""
+HTTPS_PORT=""
+TZ=""
+
 # Enhanced log functions with colors
 log() {
     echo -e "${GREEN}[$(date '+%Y-%m-%d %H:%M:%S')] ${WHITE}$1${NC}"
 }
 
 error() {
-    echo -e "${RED}[ERROR] $1${NC}"
+    echo -e "${RED}[ERROR] $1${NC}" >&2
 }
 
 warning() {
@@ -42,8 +55,8 @@ info() {
 print_banner() {
     echo -e "${PURPLE}"
     echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║              Chromium Docker Setup Script v2.0              ║"
-    echo "║                  Enhanced & User-Friendly                    ║"
+    echo "║              Chromium Docker Setup Script v3.0              ║"
+    echo "║                Fixed & Production Ready                      ║"
     echo "╚══════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 }
@@ -51,7 +64,7 @@ print_banner() {
 # Check if running as root
 check_root() {
     if [ "$EUID" -eq 0 ]; then
-        warning "Running as root. This is fine but not recommended for production."
+        warning "Running as root. This is not recommended for production."
         read -p "Do you want to continue? (y/N): " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -60,51 +73,83 @@ check_root() {
     fi
 }
 
-# Check system compatibility
+# Check system compatibility with better OS detection
 check_system() {
     info "Checking system compatibility..."
     
     if [ ! -f /etc/os-release ]; then
-        error "Cannot detect OS. This script is designed for Ubuntu/Debian systems."
+        error "Cannot detect OS. This script requires a Linux distribution with /etc/os-release."
         exit 1
     fi
     
+    # Source OS release info
     . /etc/os-release
-    if [ "$ID" != "ubuntu" ] && [ "$ID" != "debian" ]; then
-        warning "This script is optimized for Ubuntu/Debian. Your OS: $ID"
-        read -p "Do you want to continue anyway? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    
+    # Set repository URL and codename based on OS
+    case "$ID" in
+        ubuntu)
+            REPO_URL="https://download.docker.com/linux/ubuntu"
+            CODENAME="${VERSION_CODENAME:-focal}"
+            ;;
+        debian)
+            REPO_URL="https://download.docker.com/linux/debian"
+            CODENAME="${VERSION_CODENAME:-bullseye}"
+            ;;
+        centos|rhel|fedora)
+            error "CentOS/RHEL/Fedora not supported in this version. Please use Ubuntu/Debian."
             exit 1
-        fi
-    fi
+            ;;
+        *)
+            warning "Unsupported OS: $ID. Trying Ubuntu repository as fallback."
+            REPO_URL="https://download.docker.com/linux/ubuntu"
+            CODENAME="focal"
+            ;;
+    esac
     
-    ARCH=$(dpkg --print-architecture 2>/dev/null || echo "unknown")
-    if [ "$ARCH" != "amd64" ] && [ "$ARCH" != "arm64" ]; then
-        warning "Unsupported architecture: $ARCH. Supported: amd64, arm64"
-    fi
+    # Check architecture
+    ARCH=$(dpkg --print-architecture 2>/dev/null || uname -m)
+    case "$ARCH" in
+        amd64|x86_64)
+            ARCH="amd64"
+            ;;
+        arm64|aarch64)
+            ARCH="arm64"
+            ;;
+        *)
+            error "Unsupported architecture: $ARCH. Supported: amd64, arm64"
+            exit 1
+            ;;
+    esac
     
-    success "System check completed. OS: $PRETTY_NAME, Arch: $ARCH"
+    success "System check completed. OS: $PRETTY_NAME, Arch: $ARCH, Codename: $CODENAME"
 }
 
-# Check available resources
+# Check available resources with better calculations
 check_resources() {
     info "Checking system resources..."
     
-    TOTAL_RAM=$(free -m | awk 'NR==2{printf "%.0f", $2/1024}')
-    if [ "$TOTAL_RAM" -lt 2 ]; then
-        warning "Low RAM detected: ${TOTAL_RAM}GB. Recommended: 2GB+"
+    # Check RAM (handle systems with <1GB RAM properly)
+    TOTAL_RAM_MB=$(free -m | awk 'NR==2{printf "%d", $2}')
+    TOTAL_RAM_GB=$((TOTAL_RAM_MB / 1024))
+    
+    if [ "$TOTAL_RAM_GB" -lt 2 ]; then
+        if [ "$TOTAL_RAM_MB" -lt 1024 ]; then
+            warning "Very low RAM detected: ${TOTAL_RAM_MB}MB. Minimum recommended: 2GB"
+        else
+            warning "Low RAM detected: ${TOTAL_RAM_GB}GB. Recommended: 2GB+"
+        fi
     fi
     
-    AVAILABLE_SPACE=$(df -BG "$HOME" | awk 'NR==2{print $4}' | sed 's/G//')
+    # Check disk space
+    AVAILABLE_SPACE=$(df -BG "$HOME" 2>/dev/null | awk 'NR==2{print $4}' | sed 's/G//' || echo "0")
     if [ "$AVAILABLE_SPACE" -lt 5 ]; then
-        warning "Low disk space: ${AVAILABLE_SPACE}GB. Recommended: 5GB+"
+        warning "Low disk space: ${AVAILABLE_SPACE}GB available. Recommended: 5GB+"
     fi
     
-    success "Resources check completed. RAM: ${TOTAL_RAM}GB, Available space: ${AVAILABLE_SPACE}GB"
+    success "Resources check completed. RAM: ${TOTAL_RAM_MB}MB, Available space: ${AVAILABLE_SPACE}GB"
 }
 
-# Enhanced user input with validation
+# Enhanced user input with better validation
 get_user_input() {
     info "Please provide the following information:"
     echo
@@ -112,10 +157,10 @@ get_user_input() {
     # Username input with validation
     while true; do
         read -p "Enter username for Chromium [3-20 characters, alphanumeric only]: " CUSTOM_USER
-        if [ ${#CUSTOM_USER} -ge 3 ] && [ ${#CUSTOM_USER} -le 20 ] && [[ "$CUSTOM_USER" =~ ^[a-zA-Z0-9]+$ ]]; then
+        if [ -n "$CUSTOM_USER" ] && [ ${#CUSTOM_USER} -ge 3 ] && [ ${#CUSTOM_USER} -le 20 ] && [[ "$CUSTOM_USER" =~ ^[a-zA-Z0-9]+$ ]]; then
             break
         else
-            error "Invalid username. Must be 3-20 characters, alphanumeric only."
+            error "Invalid username. Must be 3-20 characters, alphanumeric only, and not empty."
         fi
     done
     
@@ -123,7 +168,7 @@ get_user_input() {
     while true; do
         read -s -p "Enter password for Chromium [minimum 6 characters]: " PASSWORD
         echo
-        if [ ${#PASSWORD} -ge 6 ]; then
+        if [ -n "$PASSWORD" ] && [ ${#PASSWORD} -ge 6 ]; then
             read -s -p "Confirm password: " PASSWORD_CONFIRM
             echo
             if [ "$PASSWORD" = "$PASSWORD_CONFIRM" ]; then
@@ -132,38 +177,46 @@ get_user_input() {
                 error "Passwords do not match. Please try again."
             fi
         else
-            error "Password must be at least 6 characters long."
+            error "Password must be at least 6 characters long and not empty."
         fi
     done
     
-    # Port selection with defaults
+    # Port selection with better validation
     echo
-    read -p "Enter HTTP port [default: 3010]: " HTTP_PORT
-    HTTP_PORT=${HTTP_PORT:-3010}
+    while true; do
+        read -p "Enter HTTP port [default: 3010, range: 1024-65535]: " HTTP_PORT
+        HTTP_PORT=${HTTP_PORT:-3010}
+        if [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] && [ "$HTTP_PORT" -ge 1024 ] && [ "$HTTP_PORT" -le 65535 ]; then
+            break
+        else
+            error "Invalid HTTP port. Must be between 1024-65535."
+        fi
+    done
     
-    read -p "Enter HTTPS port [default: 3011]: " HTTPS_PORT
-    HTTPS_PORT=${HTTPS_PORT:-3011}
+    while true; do
+        read -p "Enter HTTPS port [default: 3011, range: 1024-65535]: " HTTPS_PORT
+        HTTPS_PORT=${HTTPS_PORT:-3011}
+        if [[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] && [ "$HTTPS_PORT" -ge 1024 ] && [ "$HTTPS_PORT" -le 65535 ]; then
+            if [ "$HTTPS_PORT" -ne "$HTTP_PORT" ]; then
+                break
+            else
+                error "HTTPS port must be different from HTTP port."
+            fi
+        else
+            error "Invalid HTTPS port. Must be between 1024-65535."
+        fi
+    done
     
-    # Validate ports
-    if ! [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] || [ "$HTTP_PORT" -lt 1024 ] || [ "$HTTP_PORT" -gt 65535 ]; then
-        warning "Invalid HTTP port. Using default: 3010"
-        HTTP_PORT=3010
-    fi
-    
-    if ! [[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] || [ "$HTTPS_PORT" -lt 1024 ] || [ "$HTTPS_PORT" -gt 65535 ]; then
-        warning "Invalid HTTPS port. Using default: 3011"
-        HTTPS_PORT=3011
-    fi
-    
-    success "Configuration completed!"
+    success "Configuration input completed!"
 }
 
-# Check if ports are available
+# Check if ports are available with better detection
 check_ports() {
     info "Checking port availability..."
     
+    # Check HTTP port
     if command -v netstat >/dev/null 2>&1; then
-        if netstat -tuln | grep -q ":$HTTP_PORT "; then
+        if netstat -tuln 2>/dev/null | grep -q ":$HTTP_PORT "; then
             warning "Port $HTTP_PORT is already in use!"
             read -p "Continue anyway? (y/N): " -n 1 -r
             echo
@@ -171,9 +224,9 @@ check_ports() {
                 exit 1
             fi
         fi
-        
-        if netstat -tuln | grep -q ":$HTTPS_PORT "; then
-            warning "Port $HTTPS_PORT is already in use!"
+    elif command -v ss >/dev/null 2>&1; then
+        if ss -tuln 2>/dev/null | grep -q ":$HTTP_PORT "; then
+            warning "Port $HTTP_PORT is already in use!"
             read -p "Continue anyway? (y/N): " -n 1 -r
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -181,7 +234,41 @@ check_ports() {
             fi
         fi
     else
-        warning "netstat not available. Cannot check port availability."
+        warning "Cannot check port availability (netstat/ss not found). Continuing..."
+    fi
+    
+    # Check HTTPS port
+    if command -v netstat >/dev/null 2>&1; then
+        if netstat -tuln 2>/dev/null | grep -q ":$HTTPS_PORT "; then
+            warning "Port $HTTPS_PORT is already in use!"
+            read -p "Continue anyway? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        fi
+    fi
+}
+
+# Detect timezone with better fallbacks
+detect_timezone() {
+    info "Detecting timezone..."
+    
+    # Try multiple methods to detect timezone
+    if [ -f /etc/timezone ]; then
+        TZ=$(cat /etc/timezone 2>/dev/null || echo "")
+    elif [ -L /etc/localtime ]; then
+        TZ=$(realpath --relative-to /usr/share/zoneinfo /etc/localtime 2>/dev/null || echo "")
+    elif command -v timedatectl >/dev/null 2>&1; then
+        TZ=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "")
+    fi
+    
+    # Validate timezone
+    if [ -z "$TZ" ] || [ ! -f "/usr/share/zoneinfo/$TZ" ]; then
+        TZ="UTC"
+        warning "Could not detect timezone, using UTC"
+    else
+        info "Detected timezone: $TZ"
     fi
 }
 
@@ -196,6 +283,8 @@ show_summary() {
     echo -e "${BLUE}║${NC} HTTPS Port:   ${WHITE}$HTTPS_PORT${NC}"
     echo -e "${BLUE}║${NC} Timezone:     ${WHITE}$TZ${NC}"
     echo -e "${BLUE}║${NC} Directory:    ${WHITE}$CHROMIUM_DIR${NC}"
+    echo -e "${BLUE}║${NC} OS/Arch:      ${WHITE}$ID/$ARCH${NC}"
+    echo -e "${BLUE}║${NC} Repository:   ${WHITE}$REPO_URL${NC}"
     echo -e "${BLUE}╚══════════════════════════════════════════╝${NC}"
     echo
     
@@ -207,85 +296,135 @@ show_summary() {
     fi
 }
 
-# Enhanced Docker installation with better error handling
+# Check Docker Compose command availability
+check_docker_compose_cmd() {
+    info "Checking Docker Compose availability..."
+    
+    # First try docker compose (newer plugin)
+    if docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+        info "Using Docker Compose plugin: docker compose"
+    # Fallback to docker-compose (standalone)
+    elif command -v docker-compose >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+        info "Using Docker Compose standalone: docker-compose"
+    else
+        error "Neither 'docker compose' nor 'docker-compose' found!"
+        error "Please install Docker Compose."
+        exit 1
+    fi
+}
+
+# Fixed Docker installation with proper error handling
 install_docker() {
     log "Starting Docker installation process..."
     
-    # Check if Docker is already installed
+    # Check if Docker is already installed and working
     if command -v docker >/dev/null 2>&1; then
-        DOCKER_VERSION=$(docker --version | cut -d' ' -f3 | cut -d',' -f1)
-        info "Docker is already installed - version: $DOCKER_VERSION"
-        read -p "Reinstall Docker? (y/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        if docker --version >/dev/null 2>&1; then
+            DOCKER_VERSION=$(docker --version 2>/dev/null | cut -d' ' -f3 | cut -d',' -f1 || echo "unknown")
+            info "Docker is already installed - version: $DOCKER_VERSION"
+            
+            # Check if user can run docker without sudo
+            if docker ps >/dev/null 2>&1; then
+                info "Docker is working properly."
+                return 0
+            elif [ "$EUID" -ne 0 ]; then
+                warning "Docker requires sudo. This will be handled automatically."
+            fi
             return 0
         fi
     fi
     
-    # Update system
+    # Update system packages
     log "Updating system packages..."
-    if ! sudo apt update -y; then
-        error "Failed to update package list"
-        exit 1
-    fi
+    sudo apt-get update -qq
     
     # Install prerequisites
     log "Installing prerequisites..."
-    sudo apt-get install -y ca-certificates curl gnupg lsb-release apt-transport-https software-properties-common
+    sudo apt-get install -y \
+        ca-certificates \
+        curl \
+        gnupg \
+        lsb-release \
+        apt-transport-https \
+        software-properties-common \
+        wget \
+        unzip
     
-    # Remove old Docker packages
-    log "Removing old Docker packages..."
-    for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
+    # Remove conflicting packages
+    log "Removing conflicting packages..."
+    for pkg in docker docker.io docker-doc docker-compose podman-docker containerd runc; do
         sudo apt-get remove -y $pkg 2>/dev/null || true
     done
     
-    # Add Docker GPG key and repository
-    log "Adding Docker repository..."
+    # Create keyrings directory
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg --yes
+    
+    # Add Docker GPG key (fixed)
+    log "Adding Docker GPG key..."
+    if ! curl -fsSL "$REPO_URL/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg; then
+        error "Failed to add Docker GPG key"
+        exit 1
+    fi
     sudo chmod a+r /etc/apt/keyrings/docker.gpg
     
+    # Add Docker repository (fixed)
+    log "Adding Docker repository..."
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] $REPO_URL \
+      $CODENAME stable" | \
       sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    # Update package list
+    log "Updating package list with Docker repository..."
+    if ! sudo apt-get update -qq; then
+        error "Failed to update package list after adding Docker repository"
+        exit 1
+    fi
     
     # Install Docker
     log "Installing Docker..."
-    sudo apt-get update
     if ! sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin; then
         error "Failed to install Docker"
         exit 1
     fi
     
+    # Start and enable Docker
+    log "Starting Docker service..."
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    
     # Add current user to docker group if not root
     if [ "$EUID" -ne 0 ]; then
         log "Adding user to docker group..."
         sudo usermod -aG docker $USER
-        warning "Please logout and login again, or run 'newgrp docker' to apply group changes."
-        info "For now, using sudo for docker commands..."
+        warning "Group changes will take effect after logout/login or running 'newgrp docker'"
+        info "For now, docker commands will use sudo"
     fi
     
-    # Start and enable Docker
-    sudo systemctl start docker
-    sudo systemctl enable docker
-    
-    success "Docker installation completed!"
+    # Verify Docker installation
+    if sudo docker --version >/dev/null 2>&1; then
+        success "Docker installation completed successfully!"
+    else
+        error "Docker installation verification failed"
+        exit 1
+    fi
 }
 
-# Create directory structure with proper error handling
+# Create directory structure with better error handling
 create_directories() {
     log "Creating directory structure..."
     
     # Determine the best location for chromium directory
-    if [ -w "$HOME" ]; then
+    if [ -w "$HOME" ] && [ -n "$HOME" ]; then
         CHROMIUM_DIR="$HOME/chromium"
     elif [ -w "/opt" ]; then
         CHROMIUM_DIR="/opt/chromium"
-        warning "Using /opt/chromium as $HOME is not writable"
+        warning "Using /opt/chromium (HOME directory not writable)"
     else
         CHROMIUM_DIR="/tmp/chromium"
-        warning "Using /tmp/chromium as fallback location"
+        warning "Using /tmp/chromium as fallback (data will be lost on reboot)"
     fi
     
     # Create main directory
@@ -303,17 +442,22 @@ create_directories() {
     
     # Set proper permissions
     if [ "$EUID" -ne 0 ]; then
-        sudo chown -R $USER:$USER "$CHROMIUM_DIR" 2>/dev/null || true
+        sudo chown -R $USER:$USER "$CHROMIUM_DIR" 2>/dev/null || {
+            warning "Could not set ownership of $CHROMIUM_DIR"
+        }
     fi
     
     success "Directory structure created: $CHROMIUM_DIR"
 }
 
-# Create enhanced docker-compose.yaml
+# Create enhanced docker-compose.yaml with fixes
 create_compose_file() {
     log "Creating docker-compose.yaml..."
     
-    cd "$CHROMIUM_DIR"
+    cd "$CHROMIUM_DIR" || {
+        error "Failed to change to directory $CHROMIUM_DIR"
+        exit 1
+    }
     
     cat > docker-compose.yaml <<EOF
 version: '3.8'
@@ -331,6 +475,8 @@ services:
       - PGID=1000
       - TZ=$TZ
       - CHROME_CLI=https://google.com
+      - SUBFOLDER=/
+      - TITLE=Chromium Browser
     volumes:
       - $CONFIG_DIR:/config
     ports:
@@ -339,82 +485,105 @@ services:
     shm_size: "1gb"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 EOF
     
     success "docker-compose.yaml created successfully!"
 }
 
-# Start container with better feedback
+# Start container with better feedback and error handling
 start_container() {
     log "Starting Chromium container..."
     
-    cd "$CHROMIUM_DIR"
+    cd "$CHROMIUM_DIR" || {
+        error "Failed to change to directory $CHROMIUM_DIR"
+        exit 1
+    }
+    
+    # Determine if we need sudo for docker
+    DOCKER_CMD="$DOCKER_COMPOSE_CMD"
+    if [ "$EUID" -ne 0 ] && ! groups | grep -q docker; then
+        DOCKER_CMD="sudo $DOCKER_COMPOSE_CMD"
+    fi
     
     # Pull the image first
-    info "Pulling Chromium Docker image - this may take a while..."
-    if [ "$EUID" -ne 0 ] && ! groups | grep -q docker; then
-        sudo docker compose pull
-    else
-        docker compose pull
+    info "Pulling Chromium Docker image (this may take a while)..."
+    if ! $DOCKER_CMD pull; then
+        error "Failed to pull Docker image"
+        exit 1
     fi
     
     # Start the container
     info "Starting container..."
-    if [ "$EUID" -ne 0 ] && ! groups | grep -q docker; then
-        if ! sudo docker compose up -d; then
-            error "Failed to start Chromium container"
-            exit 1
-        fi
-    else
-        if ! docker compose up -d; then
-            error "Failed to start Chromium container"
-            exit 1
-        fi
+    if ! $DOCKER_CMD up -d; then
+        error "Failed to start Chromium container"
+        error "Check logs with: $DOCKER_CMD logs chromium"
+        exit 1
     fi
     
     # Wait for container to be ready
-    info "Waiting for container to be ready..."
-    sleep 10
+    info "Waiting for container to initialize (60 seconds)..."
+    sleep 15
     
-    # Check if container is running
-    if [ "$EUID" -ne 0 ] && ! groups | grep -q docker; then
-        CONTAINER_STATUS=$(sudo docker compose ps --format "table {{.Status}}" | grep -v STATUS | head -1)
-    else
-        CONTAINER_STATUS=$(docker compose ps --format "table {{.Status}}" | grep -v STATUS | head -1)
-    fi
+    # Check container status multiple times
+    for i in {1..9}; do
+        CONTAINER_STATUS=$($DOCKER_CMD ps --format "table {{.Status}}" | grep -v STATUS | head -1 2>/dev/null || echo "Not found")
+        
+        if [[ "$CONTAINER_STATUS" == *"Up"* ]]; then
+            success "Chromium container started successfully!"
+            return 0
+        elif [[ "$CONTAINER_STATUS" == *"Exited"* ]]; then
+            error "Container exited unexpectedly. Check logs:"
+            $DOCKER_CMD logs chromium | tail -10
+            exit 1
+        fi
+        
+        info "Waiting... (attempt $i/9)"
+        sleep 5
+    done
     
-    if [[ "$CONTAINER_STATUS" == *"Up"* ]]; then
-        success "Chromium container started successfully!"
-    else
-        error "Container failed to start properly. Status: $CONTAINER_STATUS"
-        exit 1
-    fi
+    warning "Container status unclear. Check manually with: $DOCKER_CMD ps"
 }
 
-# Get public IP with multiple fallbacks
+# Get public IP with multiple fallbacks and better error handling
 get_public_ip() {
-    log "Detecting public IP address..."
+    log "Detecting IP address..."
     
     PUBLIC_IP=""
     
-    for service in "curl -s ifconfig.me" "curl -s ipinfo.io/ip" "curl -s icanhazip.com" "curl -s ident.me"; do
-        if PUBLIC_IP=$(eval $service 2>/dev/null) && [ -n "$PUBLIC_IP" ]; then
-            break
+    # Try multiple services for public IP
+    local ip_services=(
+        "curl -s --connect-timeout 5 ifconfig.me"
+        "curl -s --connect-timeout 5 ipinfo.io/ip"
+        "curl -s --connect-timeout 5 icanhazip.com"
+        "curl -s --connect-timeout 5 ident.me"
+        "wget -qO- --timeout=5 ifconfig.me"
+    )
+    
+    for service in "${ip_services[@]}"; do
+        if PUBLIC_IP=$(eval $service 2>/dev/null | tr -d '\n\r' | head -1) && \
+           [ -n "$PUBLIC_IP" ] && \
+           [[ "$PUBLIC_IP" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            info "Detected public IP: $PUBLIC_IP"
+            return 0
         fi
     done
     
-    # Fallback to local IP if public IP detection fails
-    if [ -z "$PUBLIC_IP" ]; then
-        PUBLIC_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
-        warning "Could not detect public IP, using local IP: $PUBLIC_IP"
+    # Fallback to local IP
+    if PUBLIC_IP=$(hostname -I 2>/dev/null | awk '{print $1}'); then
+        if [ -n "$PUBLIC_IP" ]; then
+            warning "Could not detect public IP, using local IP: $PUBLIC_IP"
+            return 0
+        fi
     fi
     
-    info "Detected IP address: $PUBLIC_IP"
+    # Ultimate fallback
+    PUBLIC_IP="localhost"
+    warning "Could not detect any IP address, using localhost"
 }
 
 # Show final results with enhanced formatting
@@ -437,27 +606,45 @@ show_results() {
     echo "╠══════════════════════════════════════════════════════════════════════╣"
     echo "║                        Management Commands                           ║"
     echo "╠══════════════════════════════════════════════════════════════════════╣"
-    echo "║ Start:   docker compose up -d                                       ║"
-    echo "║ Stop:    docker compose down                                        ║"
-    echo "║ Restart: docker compose restart                                     ║"
-    echo "║ Logs:    docker compose logs -f                                     ║"
-    echo "║ Status:  docker compose ps                                          ║"
+    
+    # Show commands based on available docker compose
+    if [[ "$DOCKER_COMPOSE_CMD" == *"sudo"* ]]; then
+        echo "║ Start:   sudo $DOCKER_COMPOSE_CMD up -d                                    ║"
+        echo "║ Stop:    sudo $DOCKER_COMPOSE_CMD down                                     ║"
+        echo "║ Restart: sudo $DOCKER_COMPOSE_CMD restart                                  ║"
+        echo "║ Logs:    sudo $DOCKER_COMPOSE_CMD logs -f chromium                         ║"
+        echo "║ Status:  sudo $DOCKER_COMPOSE_CMD ps                                       ║"
+    else
+        echo "║ Start:   $DOCKER_COMPOSE_CMD up -d                                      ║"
+        echo "║ Stop:    $DOCKER_COMPOSE_CMD down                                       ║"
+        echo "║ Restart: $DOCKER_COMPOSE_CMD restart                                    ║"
+        echo "║ Logs:    $DOCKER_COMPOSE_CMD logs -f chromium                           ║"
+        echo "║ Status:  $DOCKER_COMPOSE_CMD ps                                         ║"
+    fi
+    
     echo "╚══════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     
     echo
-    echo -e "${BLUE}📋 Quick Notes:${NC}"
-    echo "• It may take 1-2 minutes for Chromium to fully load"
-    echo "• If you can't connect, check your firewall settings"
+    echo -e "${BLUE}📋 Important Notes:${NC}"
+    echo "• Wait 2-3 minutes for Chromium to fully initialize"
+    echo "• If HTTPS doesn't work, try HTTP first: http://$PUBLIC_IP:$HTTP_PORT"
+    echo "• For HTTPS certificate warnings, click 'Advanced' → 'Proceed'"
+    echo "• Check firewall settings if you can't connect externally"
     echo "• All management commands should be run from: $CHROMIUM_DIR"
     echo
     
-    if [ "$PUBLIC_IP" = "localhost" ] || [[ "$PUBLIC_IP" =~ ^192\.168\. ]] || [[ "$PUBLIC_IP" =~ ^10\. ]] || [[ "$PUBLIC_IP" =~ ^172\. ]]; then
-        echo -e "${YELLOW}⚠️  Note: Using local/private IP. For external access, use your server's public IP.${NC}"
-        echo
+    # IP address specific notes
+    if [ "$PUBLIC_IP" = "localhost" ]; then
+        echo -e "${YELLOW}⚠️  Note: Using localhost - only accessible from this machine${NC}"
+    elif [[ "$PUBLIC_IP" =~ ^192\.168\. ]] || [[ "$PUBLIC_IP" =~ ^10\. ]] || [[ "$PUBLIC_IP" =~ ^172\.(1[6-9]|2[0-9]|3[0-1])\. ]]; then
+        echo -e "${YELLOW}⚠️  Note: Using private IP - accessible within local network only${NC}"
     fi
     
-    echo -e "${GREEN}🎯 Ready to browse! Open your web browser and navigate to the URLs above.${NC}"
+    echo
+    echo -e "${GREEN}🎯 Installation complete! Open your web browser and navigate to:${NC}"
+    echo -e "${WHITE}   Primary: ${CYAN}http://$PUBLIC_IP:$HTTP_PORT${NC}"
+    echo -e "${WHITE}   Secure:  ${CYAN}https://$PUBLIC_IP:$HTTPS_PORT${NC}"
 }
 
 # Main execution function
@@ -468,14 +655,7 @@ main() {
     check_root
     check_system
     check_resources
-    
-    # Detect timezone
-    if [ -f /etc/localtime ]; then
-        TZ=$(realpath --relative-to /usr/share/zoneinfo /etc/localtime 2>/dev/null || echo "UTC")
-    else
-        TZ="UTC"
-        warning "/etc/localtime not found, using UTC"
-    fi
+    detect_timezone
     
     # Get user configuration
     get_user_input
@@ -489,6 +669,7 @@ main() {
     
     # Installation process
     install_docker
+    check_docker_compose_cmd
     create_compose_file
     start_container
     get_public_ip
@@ -497,8 +678,34 @@ main() {
     show_results
 }
 
-# Trap errors and provide helpful information
-trap 'error "Script failed at line $LINENO. Check the logs above for details."' ERR
+# Improved error trap with cleanup
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        error "Script failed at line $1. Exit code: $exit_code"
+        
+        # Show some helpful debugging info
+        if [ -n "$CHROMIUM_DIR" ] && [ -d "$CHROMIUM_DIR" ]; then
+            echo -e "${YELLOW}Debug information:${NC}"
+            echo "• Installation directory: $CHROMIUM_DIR"
+            
+            if [ -f "$CHROMIUM_DIR/docker-compose.yaml" ]; then
+                echo "• Docker compose file exists"
+                if [ -n "$DOCKER_COMPOSE_CMD" ]; then
+                    echo "• Container logs (last 10 lines):"
+                    cd "$CHROMIUM_DIR" && $DOCKER_COMPOSE_CMD logs --tail=10 chromium 2>/dev/null || echo "  Could not retrieve logs"
+                fi
+            fi
+        fi
+        
+        echo -e "${CYAN}For help, check:${NC}"
+        echo "• Script logs above"
+        echo "• Docker installation: systemctl status docker"
+        echo "• Container status: docker ps -a"
+    fi
+}
+
+trap 'cleanup $LINENO' ERR
 
 # Run main function
 main "$@"
