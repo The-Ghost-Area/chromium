@@ -460,9 +460,7 @@ create_compose_file() {
     }
     
     cat > docker-compose.yaml <<EOF
-version: '3.8'
-
-services:
+    services:
   chromium:
     image: lscr.io/linuxserver/chromium:latest
     container_name: chromium
@@ -475,8 +473,6 @@ services:
       - PGID=1000
       - TZ=$TZ
       - CHROME_CLI=https://google.com
-      - SUBFOLDER=/
-      - TITLE=Chromium Browser
     volumes:
       - $CONFIG_DIR:/config
     ports:
@@ -484,13 +480,8 @@ services:
       - "$HTTPS_PORT:3001"
     shm_size: "1gb"
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-EOF
+    
+    EOF
     
     success "docker-compose.yaml created successfully!"
 }
