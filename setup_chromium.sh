@@ -181,27 +181,13 @@ get_user_input() {
         fi
     done
     
-    # Port selection with better validation
+    # Port selection - HTTPS only
     echo
-    while true; do
-        read -p "Enter HTTP port [default: 3010, range: 1024-65535]: " HTTP_PORT
-        HTTP_PORT=${HTTP_PORT:-3010}
-        if [[ "$HTTP_PORT" =~ ^[0-9]+$ ]] && [ "$HTTP_PORT" -ge 1024 ] && [ "$HTTP_PORT" -le 65535 ]; then
-            break
-        else
-            error "Invalid HTTP port. Must be between 1024-65535."
-        fi
-    done
-    
     while true; do
         read -p "Enter HTTPS port [default: 3011, range: 1024-65535]: " HTTPS_PORT
         HTTPS_PORT=${HTTPS_PORT:-3011}
         if [[ "$HTTPS_PORT" =~ ^[0-9]+$ ]] && [ "$HTTPS_PORT" -ge 1024 ] && [ "$HTTPS_PORT" -le 65535 ]; then
-            if [ "$HTTPS_PORT" -ne "$HTTP_PORT" ]; then
-                break
-            else
-                error "HTTPS port must be different from HTTP port."
-            fi
+            break
         else
             error "Invalid HTTPS port. Must be between 1024-65535."
         fi
@@ -210,34 +196,10 @@ get_user_input() {
     success "Configuration input completed!"
 }
 
-# Check if ports are available with better detection
+# Check if port is available
 check_ports() {
     info "Checking port availability..."
     
-    # Check HTTP port
-    if command -v netstat >/dev/null 2>&1; then
-        if netstat -tuln 2>/dev/null | grep -q ":$HTTP_PORT "; then
-            warning "Port $HTTP_PORT is already in use!"
-            read -p "Continue anyway? (y/N): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
-        fi
-    elif command -v ss >/dev/null 2>&1; then
-        if ss -tuln 2>/dev/null | grep -q ":$HTTP_PORT "; then
-            warning "Port $HTTP_PORT is already in use!"
-            read -p "Continue anyway? (y/N): " -n 1 -r
-            echo
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                exit 1
-            fi
-        fi
-    else
-        warning "Cannot check port availability (netstat/ss not found). Continuing..."
-    fi
-    
-    # Check HTTPS port
     if command -v netstat >/dev/null 2>&1; then
         if netstat -tuln 2>/dev/null | grep -q ":$HTTPS_PORT "; then
             warning "Port $HTTPS_PORT is already in use!"
@@ -247,6 +209,17 @@ check_ports() {
                 exit 1
             fi
         fi
+    elif command -v ss >/dev/null 2>&1; then
+        if ss -tuln 2>/dev/null | grep -q ":$HTTPS_PORT "; then
+            warning "Port $HTTPS_PORT is already in use!"
+            read -p "Continue anyway? (y/N): " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                exit 1
+            fi
+        fi
+    else
+        warning "Cannot check port availability (netstat/ss not found). Continuing..."
     fi
 }
 
@@ -279,7 +252,6 @@ show_summary() {
     echo -e "${BLUE}║            Configuration Summary         ║${NC}"
     echo -e "${BLUE}╠══════════════════════════════════════════╣${NC}"
     echo -e "${BLUE}║${NC} Username:     ${WHITE}$CUSTOM_USER${NC}"
-    echo -e "${BLUE}║${NC} HTTP Port:    ${WHITE}$HTTP_PORT${NC}"
     echo -e "${BLUE}║${NC} HTTPS Port:   ${WHITE}$HTTPS_PORT${NC}"
     echo -e "${BLUE}║${NC} Timezone:     ${WHITE}$TZ${NC}"
     echo -e "${BLUE}║${NC} Directory:    ${WHITE}$CHROMIUM_DIR${NC}"
@@ -450,7 +422,7 @@ create_directories() {
     success "Directory structure created: $CHROMIUM_DIR"
 }
 
-# Create enhanced docker-compose.yaml with fixes
+# Create simple and clean docker-compose.yaml
 create_compose_file() {
     log "Creating docker-compose.yaml..."
     
@@ -460,7 +432,9 @@ create_compose_file() {
     }
     
     cat > docker-compose.yaml <<EOF
-    services:
+version: '3.8'
+
+services:
   chromium:
     image: lscr.io/linuxserver/chromium:latest
     container_name: chromium
@@ -472,16 +446,14 @@ create_compose_file() {
       - PUID=1000
       - PGID=1000
       - TZ=$TZ
-      - CHROME_CLI=https://google.com
+      - CHROME_CLI=about:blank
     volumes:
       - $CONFIG_DIR:/config
     ports:
-      - "$HTTP_PORT:3000"
       - "$HTTPS_PORT:3001"
-    shm_size: "1gb"
+    shm_size: "2gb"
     restart: unless-stopped
-    
-    EOF
+EOF
     
     success "docker-compose.yaml created successfully!"
 }
