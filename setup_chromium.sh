@@ -293,7 +293,7 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=REPLACE_TZ
-      - CHROME_CLI=about:blank
+      - CHROME_CLI=https://google.com
     volumes:
       - REPLACE_CONFIG:/config
     ports:
