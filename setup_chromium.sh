@@ -1,106 +1,112 @@
 #!/bin/bash
 
-# Exit on any error
-set -e
+# Simple Chromium Docker Setup Script (No Proxy)
+# Easy installation without complications
 
-# Log function for debugging
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Functions
+print_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
 }
 
-# Step 1: Check home directory permissions
-log "Checking home directory permissions..."
-HOME_DIR="$HOME"
-if [ ! -w "$HOME_DIR" ]; then
-    log "Error: Home directory $HOME_DIR is not writable"
-    exit 1
-fi
-log "Home directory $HOME_DIR is writable"
+print_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-# Step 2: Update and upgrade the system
-log "Updating and upgrading system packages..."
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Banner
+echo -e "${GREEN}"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║           Simple Chromium Docker Setup Script               ║"
+echo "║                   No Proxy Required                         ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+# Get user input
+echo
+read -p "Enter username for Chromium: " CUSTOM_USER
+read -s -p "Enter password for Chromium: " PASSWORD
+echo
+read -p "Enter HTTP port [default: 3010]: " HTTP_PORT
+HTTP_PORT=${HTTP_PORT:-3010}
+read -p "Enter HTTPS port [default: 3011]: " HTTPS_PORT  
+HTTPS_PORT=${HTTPS_PORT:-3011}
+
+# Get timezone
+print_info "Detecting timezone..."
+if [ -f /etc/localtime ]; then
+    TZ=$(realpath --relative-to /usr/share/zoneinfo /etc/localtime 2>/dev/null || echo "UTC")
+else
+    TZ="UTC"
+fi
+print_info "Using timezone: $TZ"
+
+# Update system
+print_info "Updating system..."
 sudo apt update -y && sudo apt upgrade -y
 
-# Step 3: Remove any existing Docker-related packages
-log "Removing existing Docker packages..."
-for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do
-    sudo apt-get remove -y $pkg || true
+# Remove old Docker packages
+print_info "Removing old Docker packages..."
+for pkg in docker.io docker-doc docker-compose podman-docker containerd runc; do 
+    sudo apt-get remove -y $pkg 2>/dev/null || true
 done
 
-# Step 4: Install prerequisites and add Docker's official GPG key
-log "Installing prerequisites and Docker GPG key..."
+# Install prerequisites
+print_info "Installing prerequisites..."
 sudo apt-get update
 sudo apt-get install -y ca-certificates curl gnupg
+
+# Add Docker repository
+print_info "Setting up Docker repository..."
 sudo install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
-# Step 5: Add Docker repository to APT sources
-log "Adding Docker repository..."
 echo \
   "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
   sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-# Step 6: Update and install Docker
-log "Installing Docker..."
-sudo apt update -y && sudo apt upgrade -y
+# Install Docker
+print_info "Installing Docker..."
+sudo apt update -y
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-# Step 7: Verify Docker installation
-log "Checking Docker version..."
-if ! docker --version; then
-    log "Error: Docker installation failed"
-    exit 1
+# Start Docker service
+print_info "Starting Docker service..."
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Add user to docker group (if not root)
+if [ "$EUID" -ne 0 ]; then
+    print_info "Adding user to docker group..."
+    sudo usermod -aG docker $USER
+    print_warning "You may need to logout and login again for docker group to take effect"
 fi
 
-# Step 8: Automatically fetch timezone
-log "Detecting server timezone..."
-if [ -f /etc/localtime ]; then
-    TZ=$(realpath --relative-to /usr/share/zoneinfo /etc/localtime 2>/dev/null || echo "UTC")
-else
-    TZ="UTC"
-    log "Warning: /etc/localtime not found, defaulting to UTC"
-fi
-log "Detected timezone: $TZ"
+# Create chromium directory
+print_info "Creating chromium directory..."
+mkdir -p $HOME/chromium
+cd $HOME/chromium
 
-# Step 9: Prompt for username and password
-log "Prompting for username and password..."
-read -p "Enter CUSTOM_USER for Chromium: " CUSTOM_USER
-read -s -p "Enter PASSWORD for Chromium: " PASSWORD
-echo
-
-# Step 10: Set default ports
-HTTP_PORT=3010
-HTTPS_PORT=3011
-log "Using default ports: HTTP=$HTTP_PORT, HTTPS=$HTTPS_PORT"
-
-# Step 11: Create chromium directory and verify
-log "Creating Chromium directory..."
-CHROMIUM_DIR="$HOME/chromium"
-if ! mkdir -p "$CHROMIUM_DIR"; then
-    log "Error: Failed to create directory $CHROMIUM_DIR, trying /root/chromium as fallback"
-    CHROMIUM_DIR="/root/chromium"
-    if ! sudo mkdir -p "$CHROMIUM_DIR"; then
-        log "Error: Failed to create fallback directory $CHROMIUM_DIR"
-        exit 1
-    fi
-fi
-if [ -d "$CHROMIUM_DIR" ]; then
-    log "Directory $CHROMIUM_DIR created or already exists"
-else
-    log "Error: Directory $CHROMIUM_DIR does not exist after creation attempt"
-    exit 1
-fi
-if ! cd "$CHROMIUM_DIR"; then
-    log "Error: Failed to change to $CHROMIUM_DIR"
-    exit 1
-fi
-log "Changed to directory: $(pwd)"
-
-# Step 12: Create docker-compose.yaml and verify
-log "Creating docker-compose.yaml..."
+# Create docker-compose.yaml
+print_info "Creating docker-compose.yaml..."
 cat > docker-compose.yaml <<EOF
+version: '3.8'
+
 services:
   chromium:
     image: lscr.io/linuxserver/chromium:latest
@@ -115,7 +121,7 @@ services:
       - TZ=$TZ
       - CHROME_CLI=https://google.com
     volumes:
-      - $CHROMIUM_DIR/config:/config
+      - $HOME/chromium/config:/config
     ports:
       - "$HTTP_PORT:3000"
       - "$HTTPS_PORT:3001"
@@ -123,51 +129,46 @@ services:
     restart: unless-stopped
 EOF
 
-if [ -f "$CHROMIUM_DIR/docker-compose.yaml" ]; then
-    log "docker-compose.yaml created successfully in $CHROMIUM_DIR"
+# Start the container
+print_info "Starting Chromium container..."
+if [ "$EUID" -ne 0 ] && ! groups | grep -q docker; then
+    print_info "Using sudo for docker commands..."
+    sudo docker compose up -d
 else
-    log "Error: Failed to create docker-compose.yaml in $CHROMIUM_DIR"
-    exit 1
+    docker compose up -d
 fi
 
-# Step 13: Create config directory for volumes
-log "Creating config directory for Chromium..."
-CONFIG_DIR="$CHROMIUM_DIR/config"
-if ! mkdir -p "$CONFIG_DIR"; then
-    log "Error: Failed to create config directory $CONFIG_DIR, trying with sudo"
-    if ! sudo mkdir -p "$CONFIG_DIR"; then
-        log "Error: Failed to create config directory $CONFIG_DIR with sudo"
-        exit 1
-    fi
-fi
-if [ -d "$CONFIG_DIR" ]; then
-    log "Config directory $CONFIG_DIR created or already exists"
-else
-    log "Error: Config directory $CONFIG_DIR does not exist after creation attempt"
-    exit 1
-fi
+# Get server IP
+print_info "Getting server IP..."
+SERVER_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip 2>/dev/null || hostname -I | awk '{print $1}')
 
-# Step 14: Start the Chromium container
-log "Starting Chromium container..."
-if ! docker compose up -d; then
-    log "Error: Failed to start Chromium container"
-    exit 1
-fi
+# Show results
+echo
+print_success "Chromium installation completed!"
+echo
+echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║                    🎉 INSTALLATION SUCCESSFUL! 🎉                    ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║                         Access URLs:                                ║${NC}"
+echo -e "${GREEN}║                                                                      ║${NC}"
+echo -e "${GREEN}║ HTTP:  ${NC}http://$SERVER_IP:$HTTP_PORT${GREEN}                                    ║${NC}"
+echo -e "${GREEN}║ HTTPS: ${NC}https://$SERVER_IP:$HTTPS_PORT${GREEN}                                   ║${NC}"
+echo -e "${GREEN}║                                                                      ║${NC}"
+echo -e "${GREEN}║ Username: ${NC}$CUSTOM_USER${GREEN}                                              ║${NC}"
+echo -e "${GREEN}║ Password: ${NC}[Your Password]${GREEN}                                         ║${NC}"
+echo -e "${GREEN}╠══════════════════════════════════════════════════════════════════════╣${NC}"
+echo -e "${GREEN}║                      Management Commands:                            ║${NC}"
+echo -e "${GREEN}║                                                                      ║${NC}"
+echo -e "${GREEN}║ Start:    docker compose up -d                                      ║${NC}"
+echo -e "${GREEN}║ Stop:     docker compose down                                       ║${NC}"
+echo -e "${GREEN}║ Restart:  docker compose restart                                    ║${NC}"
+echo -e "${GREEN}║ Logs:     docker compose logs -f                                    ║${NC}"
+echo -e "${GREEN}║                                                                      ║${NC}"
+echo -e "${GREEN}║ Directory: $HOME/chromium                                    ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════╝${NC}"
+echo
 
-# Step 15: Fetch public IP address
-log "Fetching public IP address..."
-PUBLIC_IP=$(curl -s ifconfig.me || echo "your-vps-ip")
-if [ "$PUBLIC_IP" = "your-vps-ip" ]; then
-    log "Warning: Failed to fetch public IP, using 'your-vps-ip' as placeholder"
-fi
-log "Public IP address: $PUBLIC_IP"
+print_info "Wait 1-2 minutes for Chromium to fully load, then access via browser!"
+print_info "All commands should be run from: $HOME/chromium"
 
-# Step 16: Display access information
-log "Chromium container started successfully!"
-echo "You can access Chromium at:"
-echo "http://$PUBLIC_IP:$HTTP_PORT/"
-echo "https://$PUBLIC_IP:$HTTPS_PORT/"
-echo "Login with username: $CUSTOM_USER, password: [hidden for security]"
-if [ "$PUBLIC_IP" = "your-vps-ip" ]; then
-    echo "Note: Replace 'your-vps-ip' with your server's actual public IP address."
-fi
+echo -e "${YELLOW}Note: If you can't access externally, check your firewall settings.${NC}"
